@@ -406,7 +406,8 @@ class Sequential {
 // const model = JSON.parse(raw);
 document.addEventListener("DOMContentLoaded", () => {
     const canvas = document.getElementById("canvas");
-    const ctx = canvas.getContext("2d");
+    // const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     const setDim = document.getElementById("setDim");
     const clearButton = document.getElementById("clearButton");
     const generar = document.getElementById("generar");
