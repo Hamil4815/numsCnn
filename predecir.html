@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     <link rel="shortcut icon" href="#">
+    <title>dibujar</title>
+    <style>
+        
+        canvas {
+            border: 1px solid black;
+            display: block;
+            margin: 5px auto;
+        }
+        #clearButton,#generar, #agregar, #setDim, #predecir {
+            display: block;
+            margin: 1px auto;
+            font-size: 8px;
+            text-align: center;
+            height: 15px;
+        }
+        #dimInput{
+            display: block;
+            text-align: center;
+            width: 30px;
+            margin: 0px auto;
+            font-size: 5px;
+        }
+        #res,#num{
+            display: block;
+            margin: 1px auto;
+            font-size: 8px;
+            text-align: center;
+            height: 15px;
+        }
+    </style>
+</head>
+<body>
+    <button id="clearButton">Borrar</button>
+    <canvas id="canvas" width="128" height="128"></canvas>
+    <button id="predecir">Predecir</button>
+    <div id="res" >?</div>
+    <button id="agregar"> Agregar</button>
+    <button id="generar">Descargar</button>
+    <input id="dimInput" placeholder="Dimension" />
+    <button id="setDim">set Dim</button>
+    <script src="predecir.js"></script>
+</body>
+</html>
