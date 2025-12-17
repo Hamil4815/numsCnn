@@ -1,50 +1,246 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-     <link rel="shortcut icon" href="#">
-    <title>dibujar</title>
-    <style>
-        
-        canvas {
-            border: 1px solid black;
-            display: block;
-            margin: 5px auto;
-        }
-        #clearButton,#generar, #agregar, #setDim, #predecir {
-            display: block;
-            margin: 1px auto;
-            font-size: 10px;
-            text-align: center;
-            height: 30px;
-        }
-        #dimInput{
-            display: block;
-            text-align: center;
-            width: 30px;
-            margin: 0px auto;
-            font-size: 8px;
-        }
-        #res,#num{
-            display: block;
-            margin: 1px auto;
-            font-size: 10px;
-            text-align: center;
-            height: 30px;
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Predecir </title>
+  <!-- Tip: si quieres usar una fuente más profesional, añade Google Fonts (Inter / Roboto) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b1220;
+      /* fondo general */
+      --surface: #0f1724;
+      /* tarjetas / panel */
+      --muted: #9aa4b2;
+      /* texto secundario */
+      --text: #000000;
+      /* texto principal */
+      --accent: #4aa3ff;
+      /* color de acción (sobrio, profesional) */
+      --glass: rgba(255, 255, 255, 0.03);
+      --radius: 12px;
+      --shadow: 0 6px 20px rgba(2, 6, 23, 0.6);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, var(--bg), #07101a);
+      color: var(--text);
+      font-family: 'Inter', system-ui, -apple-system, 'Helvetica Neue', Arial;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 28px;
+    }
+
+    /* Card contenedor */
+    .card {
+      width: min(980px, 96vw);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 20px;
+      padding: 22px;
+      align-items: start;
+    }
+
+    header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 4px;
+      text-align: center;
+      justify-content: center;
+    }
+
+    .brand {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(74, 163, 255, 0.12), rgba(74, 163, 255, 0.06));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: var(--accent);
+      font-size: 18px;
+      box-shadow: 0 3px 10px rgba(74, 163, 255, 0.04) inset;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    p.lead {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    /* Área principal */
+    .canvas-area {
+      background: linear-gradient(180deg, var(--surface), rgba(255, 255, 255, 0.01));
+      border-radius: 10px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    canvas#canvas {
+      /* width: 100%; max-width: 256px; height: auto; aspect-ratio: 1 / 1; */
+      border-radius: 8px;
+      background: #ffffff;
+      display: block;
+      margin: 0 auto;
+      box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      touch-action: none;
+      position: relative;
+    }
+
+    /* Controles y barra de estado */
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    button,
+    select {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+      color: var(--text);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: transform .06s ease, box-shadow .06s ease;
+    }
+
+    button:hover,
+    select:hover {
+      transform: translateY(-1px);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button:focus {
+      outline: 3px solid rgba(74, 163, 255, 0.14);
+    }
+
+    /* Panel derecho */
+    .sidebar {
+      padding: 12px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.01), rgba(255, 255, 255, 0.00));
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 200px;
+    }
+
+    .panel {
+      background: var(--glass);
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.02);
+    }
+
+    .label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    #resultados {
+      width: 100%;
+      height: 96px;
+      border-radius: 8px;
+      background: #06121c;
+      border: 1px solid rgba(255, 255, 255, 0.03);
+    }
+
+    /* Responsive */
+    @media (max-width: 880px) {
+      .card {
+        grid-template-columns: 1fr;
+      }
+
+      header {
+        gap: 10px;
+      }
+    }
+
+    /* Small helper text */
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+    }
+  </style>
 </head>
+
 <body>
-    <button id="clearButton">Borrar</button>
-    <canvas id="canvas" width="256" height="256"></canvas>
-    <button id="predecir">Predecir</button>
-    <div id="res" >?</div>
-    <button id="agregar"> Agregar</button>
-    <button id="generar">Descargar</button>
-    <input id="dimInput" placeholder="Dimension" />
-    <button id="setDim">set Dim</button>
-    <script id="model-data" type="application/json" src="model.json"></script>
-    <script src="predecir.js"></script>
+  <div class="card">
+    <header>
+      <div class="brand">AI</div>
+      <div>
+        <h1>Predice números</h1>
+      </div>
+    </header>
+
+    <section class="canvas-area">
+
+      <canvas id="canvas" width="256" height="256" aria-label="Dibuja aquí"></canvas>
+      <div class="controls">
+        <button id="clearButton">Borrar</button>
+        <button id="predecir">Predecir</button>
+        <select id="miSelect">
+          <option value="v1">pequeño</option>
+          <option value="v2">mediano</option>
+          <option value="v3">grande</option>
+        </select>
+      </div>
+
+    </section>
+
+    <aside class="sidebar">
+      <div class="panel">
+        <div class="label">Resultados</div>
+        <canvas id="resultados" width="256" height="100"></canvas>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Mantengo la inclusión de tu JS original para no romper la funcionalidad -->
+  <script id="model-data" type="application/json" src="model.json"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="predecir.js"></script>
 </body>
+
 </html>
