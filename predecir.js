@@ -1,17 +1,30 @@
 
-
 async function loadModel() {
-  const response = await fetch("model.json"); // ruta relativa al HTML
+  const response = await fetch("https://hamil4815.github.io/numsCnn/model.json");
   if (!response.ok) throw new Error("No se pudo cargar el modelo");
   return await response.json();
 }
-// uso
+async function loadModel2() {
+  const response = await fetch("https://hamil4815.github.io/numsCnn/model2.json");
+  // const response = await fetch("http://192.168.56.1:5550/projectos/ActorCritic/xxx.json");
+  if (!response.ok) throw new Error("No se pudo cargar el modelo2");
+  return await response.json();
+}
 let model = null;
+let model2 = null;
 loadModel().then(m => {
   model = m;
   model = setear(model);
   console.log("Modelo cargado");
 });
+loadModel2().then(m2 => {
+  model2 = m2;
+  model2 = setear(model2);
+  console.log("Modelo2 cargado");
+});
+
+// let model = []// solo asume que hay algo que ya uego lo pongo
+// let model2 =[]// solo asume que hay algo que ya uego lo pongo
 
 function maxPooling(image, poolSize = 2) {
   const imageHeight = image.length;
@@ -42,7 +55,6 @@ function maxPooling(image, poolSize = 2) {
           if (val > max) max = val;
         }
       }
-
       mapa[oi][oj] = max;
     }
   }
@@ -50,11 +62,9 @@ function maxPooling(image, poolSize = 2) {
   return mapa;
 }
 function dimension(img) {
-    return [img.length, img[0].length];
+  return [img.length, img[0].length];
 }
-
-//-------------------------------------------------------
-function normalizeSample(sample, mean=12.223856689453125, std=53.727097888564764) {
+function normalizeSample(sample, mean = 12.2238, std = 53.7271) {
   // sample es una matriz 2D como [[1,2],[3,4]]
   const normInp = sample.map(row =>
     row.map(v => (v - mean) / std)
@@ -63,7 +73,6 @@ function normalizeSample(sample, mean=12.223856689453125, std=53.727097888564764
   // Para que encaje con tu modelo (que espera [ [..] ] )
   return [normInp];
 }
-// -------------------- Utilidades para convolución --------------------
 function isBatched4D(x) { // [N][C][H][W]
   return Array.isArray(x) && Array.isArray(x[0]) && Array.isArray(x[0][0]) && Array.isArray(x[0][0][0]);
 }
@@ -78,136 +87,306 @@ function ensureBatch2D(x) {
   if (isBatched2D(x)) return x;
   return [x];
 }
-// -------------------- Layers --------------------
-class Linear {
-  constructor(inSize, outSize) {
-    this.tipo= "fc";
-    this.inp= inSize;
-    this.out= outSize;
-    this.weight = Array.from({ length: outSize }, () =>
-      Array.from({ length: inSize }, () => Math.random() * 0.01)
-    );
-    this.bias = Array(outSize).fill(0);
-    this.lastInput = null;
-  }
-  forward(x) {
-    const batch = ensureBatch2D(x); // [N][inSize]
-    this.lastInput = batch;
-    const N = batch.length;
-    const out = Array.from({length: N}, () => Array(this.weight.length).fill(0)); // [N][outSize]
-    for (let n = 0; n < N; n++) {
-      for (let i = 0; i < this.weight.length; i++) {
-        let sum = this.bias[i];
-        for (let j = 0; j < this.weight[i].length; j++) sum += this.weight[i][j] * batch[n][j];
-        out[n][i] = sum;
-      }
-    }
-    return out.length === 1 ? out[0] : out;
-  }
+class Conv2D {//mejora en la inicializacion de los pesos
+  constructor(inChannels, outChannels, kernelSize) {
+    this.tipo = "conv2d";
+    this.inChannels = inChannels;
+    this.outChannels = outChannels;
+    this.kernelSize = kernelSize;
+    this.lastOutputShape = [this.outChannels, 3, 3];
 
-}
-class Conv2D {
-  // Conv2D compatible con SGD (kernels y grad en forma anidada),
-  // pero con optimizaciones internas (Float32Array rows, buffers planos, reuso).
-  constructor( inChannels, outChannels, kernelSize ) {
-    this.tipo = "conv2d"
-    this.inChannels = inChannels
-    this.outChannels = outChannels
-    this.kernelSize = kernelSize
-    this.lastOutputShape = [ this.outChannels, 3, 3 ]
+    const K = kernelSize;
 
-    const K = kernelSize
-    const K2 = K * K
-    this.kernels = new Array( outChannels )
+    // --- CAMBIO AQUÍ: Inicialización He (Kaiming) ---
+    // Fan-in = canales de entrada * ancho * alto del kernel
+    const fanIn = inChannels * K * K;
+    const std = Math.sqrt(2 / fanIn);
+    // ------------------------------------------------
+
+    this.kernels = new Array(outChannels);
     for (let f = 0; f < outChannels; f++) {
-      this.kernels[f] = new Array( inChannels )
+      this.kernels[f] = new Array(inChannels);
       for (let c = 0; c < inChannels; c++) {
-        // cada kernel es una matriz K x K; la representamos como array de filas Float32Array
-        const kc = new Array( K )
+        const kc = new Array(K);
         for (let ky = 0; ky < K; ky++) {
-          const row = new Float32Array( K )
-          for (let kx = 0; kx < K; kx++) row[kx] = (Math.random() - 0.5) * 0.1
-          kc[ky] = row
+          const row = new Float32Array(K);
+          for (let kx = 0; kx < K; kx++) {
+            // Usamos la desviación calculada
+            row[kx] = (Math.random() - 0.5) * 2 * std;
+          }
+          kc[ky] = row;
         }
-        this.kernels[f][c] = kc
+        this.kernels[f][c] = kc;
       }
     }
-    this.bias = new Float32Array( outChannels )
-    this.input = null
-
+    // ... resto del código igual (bias, grad, etc)
+    this.bias = new Float32Array(outChannels);
+    this.gradBias = new Float32Array(outChannels);
+    this.grad = new Array(outChannels);
+    for (let f = 0; f < outChannels; f++) {
+      this.grad[f] = new Array(inChannels);
+      for (let c = 0; c < inChannels; c++) {
+        const gkc = new Array(K);
+        for (let ky = 0; ky < K; ky++) {
+          gkc[ky] = new Float32Array(K);
+        }
+        this.grad[f][c] = gkc;
+      }
+    }
+    this.input = null;
+    this._tmpInputFlat = null;
+    this._tmpDInputFlat = null;
   }
-  forward( batchInput ) {
-    const batch = ensureBatch4D( batchInput ) // mantiene tu convención [N][C][H][W]
-    this.input = batch
-    const N = batch.length
-    const C = batch[0].length
-    const H = batch[0][0].length
-    const W = batch[0][0][0].length
-    const K = this.kernelSize
-    const outH = H - K + 1
-    const outW = W - K + 1
+  // ... resto de métodos ...
+  toJSON() {
+    return {
+      tipo: this.tipo,
+      inChannels: this.inChannels,
+      outChannels: this.outChannels,
+      kernelSize: this.kernelSize,
+      lastOutputShape: this.lastOutputShape,
+      kernels: this.kernels,
+      bias: this.bias,
+    };
+  }
+  // Forward: empaqueta la entrada en un Float32Array por imagen y calcula convolución
+  forward(batchInput) {
+    const batch = ensureBatch4D(batchInput); // [N][C][H][W]
+    // const batch = batchInput;
+    // console.log("Conv2D forward batch shape:", tensorInfo(batch));
+    this.input = batch;
+    const N = batch.length;
+    const C = batch[0].length;
+    const H = batch[0][0].length;
+    const W = batch[0][0][0].length;
+    const K = this.kernelSize;
+    const outH = H - K + 1;
+    const outW = W - K + 1;
 
     // Output en la forma esperada por el resto del código
     const output = Array.from({ length: N }, () =>
       Array.from({ length: this.outChannels }, () =>
-        Array.from({ length: outH }, () => Array( outW ).fill(0))
+        Array.from({ length: outH }, () => Array(outW).fill(0))
       )
-    )
+    );
 
     // preparar buffer plano de entrada (reusar si es posible)
-    const inSize = C * H * W
+    const inSize = C * H * W;
     if (!this._tmpInputFlat || this._tmpInputFlat.length < inSize) {
-      this._tmpInputFlat = new Float32Array( inSize )
+      this._tmpInputFlat = new Float32Array(inSize);
     }
 
-    const kernels = this.kernels
-    const bias = this.bias
+    const kernels = this.kernels;
+    const bias = this.bias;
 
     for (let n = 0; n < N; n++) {
       // pack input[n] -> _tmpInputFlat
-      let p = 0
-      const img = batch[n]
+      let p = 0;
+      const img = batch[n];
       for (let c = 0; c < C; c++) {
-        const plane = img[c]
+        const plane = img[c];
         for (let y = 0; y < H; y++) {
-          const row = plane[y]
+          const row = plane[y];
           for (let x = 0; x < W; x++) {
-            this._tmpInputFlat[p++] = row[x]
+            this._tmpInputFlat[p++] = row[x];
           }
         }
       }
 
       // compute conv using flat input but reading kernels via kernels[f][c][ky][kx]
       for (let f = 0; f < this.outChannels; f++) {
-        const b = bias[f]
+        const b = bias[f];
         for (let oy = 0; oy < outH; oy++) {
           for (let ox = 0; ox < outW; ox++) {
-            let sum = 0.0
+            let sum = 0.0;
             // inner product: ciclo por canales y kernel
             for (let c = 0; c < C; c++) {
-              const inBase = c * (H * W)
-              const kc = kernels[f][c]
+              const inBase = c * (H * W);
+              const kc = kernels[f][c];
               for (let ky = 0; ky < K; ky++) {
-                const inRowStart = inBase + (oy + ky) * W + ox
-                const krow = kc[ky] // Float32Array
+                const inRowStart = inBase + (oy + ky) * W + ox;
+                const krow = kc[ky]; // Float32Array
                 // sumar fila de kernel
                 for (let kx = 0; kx < K; kx++) {
-                  sum += this._tmpInputFlat[inRowStart + kx] * krow[kx]
+                  sum += this._tmpInputFlat[inRowStart + kx] * krow[kx];
                 }
               }
             }
-            output[n][f][oy][ox] = sum + b
+            output[n][f][oy][ox] = sum + b;
           }
         }
       }
     }
 
-    return output
+    return output;
+  }
+
+  // Backward: acumula gradientes en this.grad y this.gradBias; devuelve dInput en forma anidada
+  backward(dOutBatch) {
+    const batch = ensureBatch4D(dOutBatch); // [N][outChannels][outH][outW]
+    const N = batch.length;
+    const C = this.input[0].length;
+    const H = this.input[0][0].length;
+    const W = this.input[0][0][0].length;
+    const K = this.kernelSize;
+    const outH = batch[0][0].length;
+    const outW = batch[0][0][0].length;
+
+    const inSize = C * H * W;
+    if (!this._tmpInputFlat || this._tmpInputFlat.length < inSize) {
+      this._tmpInputFlat = new Float32Array(inSize);
+    }
+    if (!this._tmpDInputFlat || this._tmpDInputFlat.length < inSize) {
+      this._tmpDInputFlat = new Float32Array(inSize);
+    }
+
+    const kernels = this.kernels;
+    const grad = this.grad;
+    // console.log( grad[0] );
+    const gradBias = this.gradBias;
+
+    // dInputs en la forma anidada esperada por el resto del código
+    const dInputs = Array.from({ length: N }, () =>
+      Array.from({ length: C }, () =>
+        Array.from({ length: H }, () => Array(W).fill(0))
+      )
+    );
+
+    for (let n = 0; n < N; n++) {
+      // empacar input n a plano
+      let p = 0;
+      const img = this.input[n];
+      for (let c = 0; c < C; c++) {
+        const plane = img[c];
+        for (let y = 0; y < H; y++) {
+          const row = plane[y];
+          for (let x = 0; x < W; x++) {
+            this._tmpInputFlat[p++] = row[x];
+          }
+        }
+      }
+
+      // limpiar tmpDInputFlat
+      this._tmpDInputFlat.fill(0);
+
+      // recorrer deltas y acumular gradientes
+      for (let f = 0; f < this.outChannels; f++) {
+        const kcList = kernels[f];
+        for (let oy = 0; oy < outH; oy++) {
+          for (let ox = 0; ox < outW; ox++) {
+            const delta = batch[n][f][oy][ox];
+            gradBias[f] += delta;
+            for (let c = 0; c < C; c++) {
+              const inBase = c * (H * W);
+              const gkc = grad[f][c];
+              const kkc = kcList[c];
+              for (let ky = 0; ky < K; ky++) {
+                const inRowBase = inBase + (oy + ky) * W + ox;
+                const krow = kkc[ky];
+                const grow = gkc[ky];
+                for (let kx = 0; kx < K; kx++) {
+                  const inVal = this._tmpInputFlat[inRowBase + kx];
+                  grow[kx] += inVal * delta; // acumular grad de kernel
+                  this._tmpDInputFlat[inRowBase + kx] += krow[kx] * delta; // propagar a dInput plano
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // desempaquetar _tmpDInputFlat a dInputs[n]
+      let q = 0;
+      for (let c = 0; c < C; c++) {
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            dInputs[n][c][y][x] = this._tmpDInputFlat[q++];
+          }
+        }
+      }
+    }
+
+    // console.log( dInputs[0] );
+    return dInputs;
   }
 }
-// -------------------- Activations / Pooling / Dropout --------------------
+class Linear {//mejora en la inicializacion de los pesos
+  constructor(inSize, outSize) {
+    this.tipo = "fc";
+    this.inp = inSize;
+    this.out = outSize;
+
+    // --- CAMBIO AQUÍ: Inicialización He ---
+    const std = Math.sqrt(2 / inSize);
+    // --------------------------------------
+
+    this.weight = Array.from({ length: outSize }, () =>
+      Array.from({ length: inSize }, () => (Math.random() - 0.5) * 2 * std)
+    );
+    this.bias = Array(outSize).fill(0);
+
+    // ... resto igual ...
+    this.grad = Array.from({ length: outSize }, () => Array(inSize).fill(0));
+    this.gradBias = Array(outSize).fill(0);
+    this.lastInput = null;
+  }
+  // ... resto de métodos ...
+  toJSON() {
+    return {
+      tipo: this.tipo,
+      inp: this.inp,
+      out: this.out,
+      weight: this.weight,
+      bias: this.bias,
+    };
+  }
+  forward(x) {
+    // console.log( 'antes',tensorInfo(x) );
+    const batch = ensureBatch2D(x); // [N][inSize]
+    // console.log( 'despues',tensorInfo(x) );
+    this.lastInput = batch;
+    const N = batch.length;
+    const out = Array.from({ length: N }, () =>
+      Array(this.weight.length).fill(0)
+    ); // [N][outSize]
+    for (let n = 0; n < N; n++) {
+      for (let i = 0; i < this.weight.length; i++) {
+        let sum = this.bias[i];
+        for (let j = 0; j < this.weight[i].length; j++)
+          sum += this.weight[i][j] * batch[n][j];
+        out[n][i] = sum;
+      }
+    }
+    return out;
+  }
+
+  backward(dout) {
+    const dBatch = ensureBatch2D(dout); // [N][outSize]
+    const N = dBatch.length;
+    const inSize = this.weight[0].length;
+    const outSize = this.weight.length;
+
+    // NOTE: do NOT reset this.grad here. It must accumulate across batch processing.
+
+    // dx: [N][inSize]
+    const dx = Array.from({ length: N }, () => Array(inSize).fill(0));
+
+    for (let n = 0; n < N; n++) {
+      for (let i = 0; i < outSize; i++) {
+        const g = dBatch[n][i];
+        this.gradBias[i] += g;
+        for (let j = 0; j < inSize; j++) {
+          this.grad[i][j] += this.lastInput[n][j] * g;
+          dx[n][j] += this.weight[i][j] * g;
+        }
+      }
+    }
+
+    return dx.length === 1 ? dx[0] : dx;
+  }
+}
 class ReLU {
-  constructor() { this.tipo= "relu"; this.mask = null  }
+  constructor() { this.tipo = "relu"; this.mask = null }
   forward(x) {
     // x can be [N][D], [N][C][H][W], or single sample
     if (isBatched2D(x)) {
@@ -232,7 +411,7 @@ class ReLU {
 }
 class MaxPool2D {
   constructor(size = 2) {
-    this.tipo= "maxPool"
+    this.tipo = "maxPool"
     this.size = size;
     this.indices = null
   }
@@ -245,23 +424,23 @@ class MaxPool2D {
     const outH = Math.floor(H / this.size);
     const outW = Math.floor(W / this.size);
 
-    const output = Array.from({length: N}, () =>
-      Array.from({length: C}, () => Array.from({length: outH}, () => Array(outW).fill(0)))
+    const output = Array.from({ length: N }, () =>
+      Array.from({ length: C }, () => Array.from({ length: outH }, () => Array(outW).fill(0)))
     );
 
-    this.indices = Array.from({length: N}, () =>
-      Array.from({length: C}, () => Array.from({length: outH}, () => Array(outW))))
+    this.indices = Array.from({ length: N }, () =>
+      Array.from({ length: C }, () => Array.from({ length: outH }, () => Array(outW))))
 
     for (let n = 0; n < N; n++) {
       for (let c = 0; c < C; c++) {
         for (let i = 0; i < outH; i++) {
           for (let j = 0; j < outW; j++) {
             let maxVal = -Infinity;
-            let maxIdx = [0,0];
+            let maxIdx = [0, 0];
             for (let m = 0; m < this.size; m++) {
               for (let n2 = 0; n2 < this.size; n2++) {
-                const val = batch[n][c][i*this.size + m][j*this.size + n2];
-                if (val > maxVal) { maxVal = val; maxIdx = [i*this.size + m, j*this.size + n2]; }
+                const val = batch[n][c][i * this.size + m][j * this.size + n2];
+                if (val > maxVal) { maxVal = val; maxIdx = [i * this.size + m, j * this.size + n2]; }
               }
             }
             output[n][c][i][j] = maxVal;
@@ -271,24 +450,6 @@ class MaxPool2D {
       }
     }
     return output;
-  }
-}
-class Dropout {
-  constructor(p) {
-    this.tipo= "drop";
-    this.p = p;
-    this.mask = null; 
-  }
-  forward(x, training) {
-    const batch = ensureBatch2D(x);
-    if (!training) {
-      // en eval devolvemos input y creamos máscara de 1s
-      this.mask = batch.map(row => row.map(() => 1));
-      return batch.length === 1 ? batch[0] : batch;  // <-- aquí, nada de outOrSingle
-    }
-    this.mask = batch.map(row => row.map(() => Math.random() > this.p ? 1 : 0));
-    const out = batch.map((row, n) => row.map((v, i) => v * this.mask[n][i]));
-    return out.length === 1 ? out[0] : out;
   }
 }
 class flat {
@@ -304,7 +465,7 @@ class flat {
 
     this.lastShape = [C, H, W]  // <-- se guarda para el backward
 
-    const OUT = Array.from({length: N}, () => new Float32Array(C*H*W))
+    const OUT = Array.from({ length: N }, () => new Float32Array(C * H * W))
     for (let n = 0; n < N; n++) {
       let idx = 0
       for (let c = 0; c < C; c++) for (let i = 0; i < H; i++) for (let j = 0; j < W; j++) {
@@ -315,53 +476,48 @@ class flat {
   }
 
 }
-// -------------------- Softmax --------------------
 function softmaxBatch(logitsBatch) {
   // logitsBatch: [N][C] -> returns [N][C]
   const batch = ensureBatch2D(logitsBatch);
   return batch.map(logits => {
     const maxLogit = Math.max(...logits);
     const exps = logits.map(v => Math.exp(v - maxLogit));
-    const sum = exps.reduce((a,b) => a+b, 0);
+    const sum = exps.reduce((a, b) => a + b, 0);
     return exps.map(e => e / sum);
   });
 }
-//----------------------Setear modelo----------------------
 function setear(modelData) {
-  let model= [];
+  let model = [];
   for (let i = 0; i < modelData.length; i++) {
     // console.log( model.length, i );
     // console.log( modelData[i]["tipo"] );
-    if (modelData[i]["tipo"]=="relu") {
+    if (modelData[i]["tipo"] == "relu") {
       model.push(new ReLU());
     }
-    if (modelData[i]["tipo"]=="maxPool") {
-      model.push(new MaxPool2D(modelData[i].size,modelData[i].size));
+    if (modelData[i]["tipo"] == "maxPool") {
+      model.push(new MaxPool2D(modelData[i].size, modelData[i].size));
     }
-    if (modelData[i]["tipo"]=="conv2d") {
-      let conv= new Conv2D(
+    if (modelData[i]["tipo"] == "conv2d") {
+      let conv = new Conv2D(
         modelData[i].inChannels,
         modelData[i].outChannels,
         modelData[i].kernelSize
       );
-      conv.kernels= modelData[i].kernels;
-      conv.bias= modelData[i].bias;
+      conv.kernels = modelData[i].kernels;
+      conv.bias = modelData[i].bias;
       model.push(conv);
     }
-    if (modelData[i]["tipo"]=="fc") {
-      let fc= new Linear(
-        modelData[i].inp,modelData[i].out,
+    if (modelData[i]["tipo"] == "fc") {
+      let fc = new Linear(
+        modelData[i].inp, modelData[i].out,
       );
-      fc.weight= modelData[i].weight;
-      fc.bias= modelData[i].bias;
+      fc.weight = modelData[i].weight;
+      fc.bias = modelData[i].bias;
       model.push(fc);
     }
-    if (modelData[i]["tipo"]=="flat") {
-      fc= modelData[i].weight;
+    if (modelData[i]["tipo"] == "flat") {
+      fc = modelData[i].weight;
       model.push(new flat());
-    }
-    if (modelData[i]["tipo"]=="drop") {
-      model.push(new Dropout(modelData[i].p));
     }
   }
   return new Sequential(model);
@@ -371,27 +527,28 @@ function evalBatchPreds(xBatch, model, returnProbs = false) {
   const logits = model.forward(xBatch);          // [batchSize][numClasses]
   const probs = softmaxBatch(logits);           // misma forma
   const preds = probs.map(p => p.indexOf(Math.max(...p)));
-  return preds;
+  return { preds, logits: probs };
+  // return { preds, logits };
 }
 class Sequential {
-  constructor ( ...layers ) {
+  constructor(...layers) {
     this.layers = layers.flat()
     this.training = true   // por defecto en modo training
   }
-  train() { 
-    this.training = true 
+  train() {
+    this.training = true
   }
-  eval() { 
-    this.training = false 
+  eval() {
+    this.training = false
   }
-  add ( layer ) {
+  add(layer) {
     this.layers.push(layer)
   }
-  forward ( x ) {
+  forward(x) {
     let out = x
-    for ( let i = 0; i < this.layers.length; i++ ) {
+    for (let i = 0; i < this.layers.length; i++) {
       const layer = this.layers[i]
-      if ( typeof layer.forward !== 'function' ) 
+      if (typeof layer.forward !== 'function')
         throw new Error('Layer sin forward detectada')
       if (layer.forward.length >= 2) {
         out = layer.forward(out, this.training)
@@ -402,115 +559,153 @@ class Sequential {
     return out
   }
 }
-// const raw = document.getElementById("model-data").textContent;
-// const model = JSON.parse(raw);
 document.addEventListener("DOMContentLoaded", () => {
-    const canvas = document.getElementById("canvas");
-    // const ctx = canvas.getContext("2d");
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    const setDim = document.getElementById("setDim");
-    const clearButton = document.getElementById("clearButton");
-    const generar = document.getElementById("generar");
-    const dimInput = document.getElementById("dimInput");
-    const agregar = document.getElementById("agregar");
-    const res = document.getElementById("res");
-    let drawing = false;
-    let datos = [];
-
-    function esPotenciaDe2(n) {
-        return n > 0 && (n & (n - 1)) === 0;
-    }
-    function ajusta(img){
-        // la imagen stiene que ser mayor o igual a 32x32 y cuadrada pero tambien una potencia de 2
-        let [x,y]= dimension(img);
-        if(x>32 && y==x && esPotenciaDe2(x) ){
-            const factor= dimension(img)[0]/32;
-            return maxPooling(img, factor);
+  const canvas = document.getElementById("canvas");
+  // const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const resultados = document.getElementById('resultados').getContext('2d');
+  const borrar = document.getElementById("clearButton");
+  const select = document.getElementById("miSelect");
+  select.value= 'v2';
+  let drawing = false;
+  const miGrafica = new Chart(resultados, {
+    type: 'bar', // Tipo de gráfica: 'line', 'pie', 'bar', etc.
+    data: {
+      labels: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'],
+      datasets: [{
+        label: ['m1','m2'],
+        data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        backgroundColor: ['rgba(255, 99, 132, 0.2)', 'rgba(54, 162, 235, 0.2)', 'rgba(255, 206, 86, 0.2)', 'rgba(75, 192, 192, 0.2)'],
+        borderColor: ['rgba(255, 99, 132, 1)', 'rgba(54, 162, 235, 1)', 'rgba(255, 206, 86, 1)', 'rgba(75, 192, 192, 1)'],
+        borderWidth: 1
+      }],
+      datasets: [
+        { label: 'Modelo A', data: Array(10).fill(0),},
+        { label: 'Modelo B', data: Array(10).fill(0) }
+      ]
+    },
+    options: {
+      plugins: {
+        legend: { display: true },
+        tooltip: {
+          enabled: true,
+          callbacks: {
+            // label: ctx => ctx.raw.toFixed(3)
+            label: ctx => `${(ctx.raw * 100).toFixed(1)} %`
+          }
         }
-    }
-    function drawLine(x, y) {
-        ctx.lineWidth = 4;
-        ctx.lineCap = "round";
-        ctx.strokeStyle = "black";
-
-        ctx.lineTo(x, y);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-    }
-    function canvasToMatrix() {
-        const img = [];
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-
-        for (let y = 0; y < canvas.height; y++) {
-            const row = [];
-            for (let x = 0; x < canvas.width; x++) {
-            const index = (y * canvas.width + x) * 4;
-            const alpha = data[index + 3]; 
-            row.push(alpha > 0 ? alpha : 0); 
-            }
-            img.push(row);
+      },
+      animation: {
+        duration: 2000,
+        easing: 'easeOutQuart'
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          grid: { display: true },
+        },
+        y: {
+          grid: { display: false },
+          ticks: { display: false }
         }
-        return img;
+      }
     }
-    //-------------------------------------------
-    canvas.addEventListener("mousedown", () => {
-        drawing = true;
-    });
-    canvas.addEventListener("mouseup", () => {
-        drawing = false;
-        ctx.beginPath();
-    });
-    //-------------------------------------------
-    canvas.addEventListener("mousemove", e => {
-      if (!drawing) return;
-      const rect = canvas.getBoundingClientRect();
-      drawLine(e.clientX - rect.left, e.clientY - rect.top);
-    });
-    canvas.addEventListener("touchmove", e => {
+  });
+
+  function esPotenciaDe2(n) {
+    return n > 0 && (n & (n - 1)) === 0;
+  }
+  function ajusta(img) {
+    // la imagen stiene que ser mayor o igual a 32x32 y cuadrada pero tambien una potencia de 2
+    let [x, y] = dimension(img);
+    if (x > 32 && y == x && esPotenciaDe2(x)) {
+      const factor = dimension(img)[0] / 32;
+      // console.log(factor)
+      return maxPooling(img, factor);
+    }
+  }
+  function drawLine(x, y) {
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "black";
+
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  }
+  function canvasToMatrix() {
+    const img = [];
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    for (let y = 0; y < canvas.height; y++) {
+      const row = [];
+      for (let x = 0; x < canvas.width; x++) {
+        const index = (y * canvas.width + x) * 4;
+        const alpha = data[index + 3];
+        row.push(alpha > 0 ? alpha : 0);
+      }
+      img.push(row);
+    }
+    return img;
+  }
+  //-------------------------------------------
+  canvas.addEventListener("mousedown", () => {
+    drawing = true;
+  });
+  canvas.addEventListener("mouseup", () => {
+    drawing = false;
+    ctx.beginPath();
+  });
+  //-------------------------------------------
+  canvas.addEventListener("mousemove", e => {
+    if (!drawing) return;
+    const rect = canvas.getBoundingClientRect();
+    drawLine(e.clientX - rect.left, e.clientY - rect.top);
+  });
+  canvas.addEventListener("touchmove", e => {
     if (!drawing) return;
     e.preventDefault();
     const rect = canvas.getBoundingClientRect();
     const touch = e.touches[0];
     drawLine(touch.clientX - rect.left, touch.clientY - rect.top);
-    });
-    //------------------------------------------
-    clearButton.addEventListener("click", () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      res.innerHTML = "?";
-    });
-    setDim.addEventListener("click", () => {
-      const dimensions = parseInt(dimInput.value, 10);
-      const MAX_DIM = 512;
-      if (!isNaN(dimensions) && dimensions > 0 && dimensions <= MAX_DIM && esPotenciaDe2(dimensions) && dimensions >=32) {
-        canvas.width = dimensions;
-        canvas.height = dimensions;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-      } else {
-        alert(`Por favor ingresa un número válido entre 32-512 y que sea potencia de 2.`);
-      }
-    });
-    generar.addEventListener("click", () => {
-    const blob = new Blob([JSON.stringify(datos)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "canvas_matrix.json";
-    link.click();
-    URL.revokeObjectURL(url); // 🔥 libera memoria
-    console.log("se ha descargado un dataset de", datos.length, "imagenes");
-    });
-    agregar.addEventListener("click", () => {
-    datos.push({ inp: canvasToMatrix() });
+  });
+  //------------------------------------------
+  borrar.addEventListener("click", () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    console.log("agregado", datos.length);
-    });
-    predecir.addEventListener("click", () => {
+    resultados.clearRect(0, 0, canvas.width, canvas.height);
+    miGrafica.data.datasets[0].data = Array(miGrafica.data.labels.length).fill(0);
+    miGrafica.data.datasets[1].data = Array(miGrafica.data.labels.length).fill(0);
+    miGrafica.update();
+  });
+  predecir.addEventListener("click", () => {
     let img = canvasToMatrix();
     img = ajusta(img);
     img = normalizeSample(img);
-    res.innerHTML = evalBatchPreds(img, model);
-    });
-    
+    let x1 = evalBatchPreds(img, model);
+    let x2= evalBatchPreds(img, model2);
+    console.log( x1.logits[0], x2.logits[0]);
+    miGrafica.data.datasets[0].data = x1.logits[0];
+    miGrafica.data.datasets[1].data = x2.logits[0];
+    miGrafica.update();
+  });
+  select.addEventListener("change", (e) => {
+    const valor = e.target.value;
+    if (valor === "v1") {
+      console.log("modo pequeño");
+      canvas.width = 128;
+      canvas.height = 128;
+    }
+    if (valor === "v2") {
+      console.log("modo mediano");
+      canvas.width = 256;
+      canvas.height = 256;
+    }
+    if (valor === "v3") {
+      console.log("modo grande");
+      canvas.width = 512;
+      canvas.height = 512;
+    }
+  });
 });
